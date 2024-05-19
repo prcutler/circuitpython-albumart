@@ -1,15 +1,19 @@
-import gc
-import os
-import ssl
 import time
 
-import adafruit_imageload
-import adafruit_minimqtt.adafruit_minimqtt as MQTT
-import adafruit_requests
+import board
 import displayio
-import socketpool
-import wifi
 from adafruit_matrixportal.matrix import Matrix
+import framebufferio
+import adafruit_requests
+import adafruit_imageload
+import gc
+import wifi
+import ssl
+import os
+import socketpool
+import io
+import adafruit_minimqtt.adafruit_minimqtt as MQTT
+
 
 wifi.radio.connect(os.getenv('CIRCUITPY_WIFI_SSID'), os.getenv('CIRCUITPY_WIFI_PASSWORD'))
 pool = socketpool.SocketPool(wifi.radio)
