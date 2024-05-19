@@ -13,7 +13,7 @@ import json
 import terminalio
 from adafruit_display_text import label
 import adafruit_minimqtt.adafruit_minimqtt as MQTT
-
+import time
 
 secrets = {
     "ssid": getenv("CIRCUITPY_WIFI_SSID"),
@@ -64,9 +64,15 @@ print("Connected to", str(esp.ssid, "utf-8"), "\tRSSI:", esp.rssi)
 # Get the Album title and artist name from JSON
 data_source = "https://silversaucer.com/album/data"
 
-resp = requests.get(data_source)
-data = resp.json()
-print(data)
+try:
+    resp = requests.get(data_source)
+    data = resp.json()
+    print(data)
+
+except RuntimeError:
+    resp = requests.get(data_source)
+    data = resp.json()
+    print(data)
 
 image_location = data["image_url"]
 artist = data["artist"]
@@ -109,7 +115,8 @@ group.append(text_area)
 display.root_group = group
 
 # ------------- MQTT Topic Setup ------------- #
-mqtt_topic = "albumart"
+mqtt_topic = "prcutler/feeds/albumart"
+
 
 ### Code ###
 # Define callback methods which are called when events occur
@@ -196,13 +203,16 @@ def message(client, topic, message):
 
 # Initialize MQTT interface with the esp interface
 # pylint: disable=protected-access
-MQTT.set_socket(socket, pyportal.network._wifi.esp)
+# MQTT.set_socket(socket, pyportal.network._wifi.esp)
 
 # Set up a MiniMQTT Client
 mqtt_client = MQTT.MQTT(
-    broker=secrets["broker"],
-    username=secrets["user"],
-    password=secrets["pass"],
+    broker=getenv("broker"),
+    username=getenv("ADAFRUIT_AIO_USERNAME"),
+    password=getenv("ADAFRUIT_AIO_KEY"),
+    port=1883,
+    socket_pool=pool,
+    ssl_context=ssl_context,
     is_ssl=False,
 )
 
@@ -214,11 +224,10 @@ mqtt_client.on_message = message
 # Connect the client to the MQTT broker.
 mqtt_client.connect()
 
-
 while True:
     # Poll the message queue
     try:
-        mqtt_client.loop()
+        mqtt_client.loop(2)
 
     except RuntimeError or ConnectionError:
         time.sleep(10)
