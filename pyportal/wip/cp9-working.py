@@ -1,44 +1,115 @@
-# SPDX-FileCopyrightText: 2021 ladyada for Adafruit Industries
 # SPDX-License-Identifier: MIT
 
-import time
-import board
-import adafruit_esp32spi.adafruit_esp32spi_socket as socket
-from adafruit_pyportal import PyPortal
-import adafruit_imageload
-import displayio
+import sys
+is_microcontroller = sys.implementation.name == "circuitpython"
 
-import adafruit_minimqtt.adafruit_minimqtt as MQTT
-import adafruit_requests as requests
+from adafruit_pyportal import PyPortal
+import adafruit_connection_manager
+import adafruit_requests
+import displayio
+import json
 import terminalio
 from adafruit_display_text import label
-import json
+import adafruit_minimqtt.adafruit_minimqtt as MQTT
+import time
+import adafruit_logging as logging
+import sdcardio
+import storage
 
-### WiFi ### - works prior to ConnectionManager
 
-# Get wifi details and more from a secrets.py file
-try:
-    from secrets import secrets
-except ImportError:
-    print("WiFi secrets are kept in secrets.py, please add them there!")
-    raise
+def getenv(value):
+    if is_microcontroller:
+        from os import getenv as cp_getenv
+        return cp_getenv(value)
+    else:
+        import tomllib
+        with open("settings.toml", "rb") as toml_file:
+            settings = tomllib.load(toml_file)
+        return settings[value]
 
-pyportal = PyPortal()
-pyportal.network.connect()
+
+secrets = {
+    "ssid": getenv("CIRCUITPY_WIFI_SSID"),
+    "password": getenv("CIRCUITPY_WIFI_PASSWORD"),
+    "broker": getenv("broker"),
+    "user": getenv("ADAFRUIT_AIO_USERNAME"),
+    "pass": getenv("ADAFRUIT_AIO_KEY"),
+}
+if secrets == {"ssid": None, "password": None}:
+    try:
+        # Fallback on secrets.py until depreciation is over and option is removed
+        from secrets import secrets
+    except ImportError:
+        print("WiFi secrets are kept in settings.toml, please add them there!")
+        raise
+
+# Set up WIFI w/ConnectionManager
+
+if is_microcontroller:
+    import board
+    import busio
+    from digitalio import DigitalInOut
+    from adafruit_esp32spi import adafruit_esp32spi
+
+    esp32_cs = DigitalInOut(board.ESP_CS)
+    esp32_ready = DigitalInOut(board.ESP_BUSY)
+    esp32_reset = DigitalInOut(board.ESP_RESET)
+
+    # Secondary (SCK1) SPI used to connect to WiFi board on Arduino Nano Connect RP2040
+    if "SCK1" in dir(board):
+        spi = busio.SPI(board.SCK1, board.MOSI1, board.MISO1)
+    else:
+        spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
+    esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_ready, esp32_reset)
+    print(esp.firmware_version)
+else:
+    esp = adafruit_connection_manager.CPythonNetwork()
+
+# Set up SD Card
+sdcard = sdcardio.SDCard(spi, board.SD_CS)
+vfs = storage.VfsFat(sdcard)
+storage.mount(vfs, "/sd")
+
+pool = adafruit_connection_manager.get_radio_socketpool(esp)
+ssl_context = adafruit_connection_manager.get_radio_ssl_context(esp)
+requests = adafruit_requests.Session(pool, ssl_context)
+
+if is_microcontroller:
+    print("Connecting to AP...")
+    while not esp.is_connected:
+        try:
+            esp.connect_AP(secrets["ssid"], secrets["password"])
+        except OSError as e:
+            print("could not connect to AP, retrying: ", e)
+            continue
+    print("Connected to", str(esp.ssid, "utf-8"), "\tRSSI:", esp.rssi)
+    print("sleeping for 10 seconds to make sure wifi is good...")
+    time.sleep(10)
+else:
+    print("Using CPython sockets...")
 
 # Get the Album title and artist name from JSON
+IMAGE_URL = "https://silversaucer.com/static/img/album-art/image_300.bmp"
+
 data_source = "https://silversaucer.com/album/data"
 
-resp = requests.get(data_source)
-data = resp.json()
-print(data)
+try:
+    resp = requests.get(data_source)
+    data = resp.json()
+    print(data)
 
-# There's a few different places we look for data in the photo of the day
+except RuntimeError:
+    resp = requests.get(data_source)
+    data = resp.json()
+    print(data)
+
 image_location = data["image_url"]
 artist = data["artist"]
 album = data["album"]
 
 album_info = artist + " - " + album
+
+# album_info = "Garbage - Garbage"
 
 # Load image on disk and display it on first boot
 display = board.DISPLAY
@@ -55,7 +126,7 @@ group = displayio.Group()
 # Add the TileGrid to the Group
 group.append(tile_grid_1)
 
-album_art = displayio.OnDiskBitmap("albumart.bmp")
+album_art = displayio.OnDiskBitmap("/sd/albumart.bmp")
 
 tile_grid_2 = displayio.TileGrid(album_art, pixel_shader=album_art.pixel_shader, y=120)
 group.append(tile_grid_2)
@@ -73,11 +144,11 @@ group.append(text_area)
 display.root_group = group
 
 # ------------- MQTT Topic Setup ------------- #
-mqtt_topic = "albumart"
+mqtt_topic = "prcutler/feeds/albumart"
 
-### Code ###
+
+# Code
 # Define callback methods which are called when events occur
-# pylint: disable=unused-argument, redefined-outer-name
 def connected(client, userdata, flags, rc):
     # This function will be called when the client is connected
     # successfully to the broker.
@@ -105,7 +176,7 @@ def message(client, topic, message):
         response = requests.get(url)
         if response.status_code == 200:
             print("Starting image download...")
-            with open("albumart.bmp", "wb") as f:
+            with open("/sd/albumart.bmp", "wb") as f:
                 for chunk in response.iter_content(chunk_size=32):
                     f.write(chunk)
                 print("Album art saved")
@@ -135,7 +206,7 @@ def message(client, topic, message):
             # Add the TileGrid to the Group
             group.append(tile_grid_1)
 
-            album_art = displayio.OnDiskBitmap("albumart.bmp")
+            album_art = displayio.OnDiskBitmap("/sd/albumart.bmp")
 
             tile_grid_2 = displayio.TileGrid(album_art, pixel_shader=album_art.pixel_shader, y=120)
             group.append(tile_grid_2)
@@ -160,13 +231,18 @@ def message(client, topic, message):
 
 # Initialize MQTT interface with the esp interface
 # pylint: disable=protected-access
-MQTT.set_socket(socket, pyportal.network._wifi.esp)
+# MQTT.set_socket(socket, pyportal.network._wifi.esp)
 
 # Set up a MiniMQTT Client
 mqtt_client = MQTT.MQTT(
-    broker=secrets["broker"],
-    username=secrets["user"],
-    password=secrets["pass"],
+    broker=getenv("broker"),
+    username=getenv("ADAFRUIT_AIO_USERNAME"),
+    password=getenv("ADAFRUIT_AIO_KEY"),
+    port=1883,
+    socket_timeout=5,
+    recv_timeout=10,
+    socket_pool=pool,
+    ssl_context=ssl_context,
     is_ssl=False,
 )
 
@@ -176,13 +252,14 @@ mqtt_client.on_disconnect = disconnected
 mqtt_client.on_message = message
 
 # Connect the client to the MQTT broker.
-mqtt_client.connect()
+# mqtt_client.logger = logger
 
+mqtt_client.connect()
 
 while True:
     # Poll the message queue
     try:
-        mqtt_client.loop()
+        mqtt_client.loop(5)
 
     except RuntimeError or ConnectionError:
         time.sleep(10)
