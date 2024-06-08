@@ -70,6 +70,10 @@ sdcard = sdcardio.SDCard(spi, board.SD_CS)
 vfs = storage.VfsFat(sdcard)
 storage.mount(vfs, "/sd")
 
+# Set up logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
 pool = adafruit_connection_manager.get_radio_socketpool(esp)
 ssl_context = adafruit_connection_manager.get_radio_ssl_context(esp)
 requests = adafruit_requests.Session(pool, ssl_context)
@@ -126,7 +130,7 @@ group = displayio.Group()
 # Add the TileGrid to the Group
 group.append(tile_grid_1)
 
-album_art = displayio.OnDiskBitmap("/sd/albumart.bmp")
+album_art = displayio.OnDiskBitmap("albumart.bmp")
 
 tile_grid_2 = displayio.TileGrid(album_art, pixel_shader=album_art.pixel_shader, y=120)
 group.append(tile_grid_2)
@@ -176,7 +180,7 @@ def message(client, topic, message):
         response = requests.get(url)
         if response.status_code == 200:
             print("Starting image download...")
-            with open("/sd/albumart.bmp", "wb") as f:
+            with open("albumart.bmp", "wb") as f:
                 for chunk in response.iter_content(chunk_size=32):
                     f.write(chunk)
                 print("Album art saved")
@@ -206,7 +210,7 @@ def message(client, topic, message):
             # Add the TileGrid to the Group
             group.append(tile_grid_1)
 
-            album_art = displayio.OnDiskBitmap("/sd/albumart.bmp")
+            album_art = displayio.OnDiskBitmap("albumart.bmp")
 
             tile_grid_2 = displayio.TileGrid(album_art, pixel_shader=album_art.pixel_shader, y=120)
             group.append(tile_grid_2)
@@ -252,7 +256,7 @@ mqtt_client.on_disconnect = disconnected
 mqtt_client.on_message = message
 
 # Connect the client to the MQTT broker.
-# mqtt_client.logger = logger
+mqtt_client.logger = logger
 
 mqtt_client.connect()
 
