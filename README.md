@@ -20,4 +20,4 @@ Using MQTT, the MatrixPortal listens for a message created by the web app when a
 * [Adafruit 64x64 RGB Led Matrix](https://www.adafruit.com/product/3649)
 * Power adapter
 
-![An album by Divine Fits, showing the album sleeve, the art on a computer screen and the same image on an RGB Matrix](divinefits.jpeg)
+![An album by Divine Fits, showing the album sleeve, the art on a computer screen and the same image on an RGB Matrix](https://paulcutler.org/project/matrixportal-albumart/divinefits.jpeg)
