@@ -48,7 +48,7 @@ if response.status_code == 200:
     # tile_grid.x = 0
 
     group.append(tile_grid)
-    display.show(group)
+    display.root_group = group
 
     response.close()
 
@@ -97,7 +97,7 @@ def message(client, topic, message):
             # tile_grid.x = 0
 
             group.append(tile_grid)
-            display.show(group)
+            display.root_group = group
 
             response.close()
 
